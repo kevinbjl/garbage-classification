@@ -3,10 +3,6 @@ from torchvision import transforms, models
 from PIL import Image
 import gradio as gr
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon
-import colorsys
-from skimage import measure
 import cv2
 
 # MobileNet 类别字典
@@ -63,35 +59,31 @@ def segment_image(image):
         output_predictions = torch.argmax(output, dim=0).cpu().numpy()
     
     # 将分割掩码调整为原始图片的尺寸
-    resized_mask = cv2.resize(output_predictions, (original_width, original_height), interpolation=cv2.INTER_NEAREST)
+    resized_mask = cv2.resize(output_predictions.astype(np.uint8), (original_width, original_height), interpolation=cv2.INTER_NEAREST)
     
-    # 准备绘图
-    fig, ax = plt.subplots(1, 1, figsize=(8, 8))
-    ax.imshow(image)
-    ax.axis("off")
-    ax.set_title("Segmentation Result with Single Mask Color")
+    # 创建颜色掩码
+    mask_color = np.array([255, 0, 0], dtype=np.uint8)  # 红色
+    color_mask = np.zeros((original_height, original_width, 3), dtype=np.uint8)
+    color_mask[resized_mask > 0] = mask_color
 
-    # 固定掩码颜色（例如红色）
-    mask_color = (1, 0, 0)  # RGB, 红色
-    unique_classes = np.unique(resized_mask)
+    # 将原始图像转换为 numpy 数组
+    image_np = np.array(image)
 
-    # 遍历每个类别，绘制掩码轮廓
-    for class_id in unique_classes:
-        if class_id == 0:  # 跳过背景类别（假设 0 是背景）
-            continue
-        class_mask = (resized_mask == class_id)
-        
-        # 找到掩码的轮廓
-        contours = measure.find_contours(class_mask.astype(np.float64), level=0.5)
-        for contour in contours:
-            poly = Polygon(contour, closed=True, facecolor=mask_color + (0.4,), edgecolor=mask_color, linewidth=2)
-            ax.add_patch(poly)
-    
-    # 保存绘制结果到临时文件
+    # 检查通道数，如果是灰度图像，转换为 RGB
+    if len(image_np.shape) == 2 or image_np.shape[2] == 1:
+        image_np = cv2.cvtColor(image_np, cv2.COLOR_GRAY2RGB)
+
+    # 确保图像和掩码的尺寸一致
+    if image_np.shape[:2] != color_mask.shape[:2]:
+        color_mask = cv2.resize(color_mask, (image_np.shape[1], image_np.shape[0]))
+
+    # 叠加掩码到图像
+    overlay = cv2.addWeighted(image_np, 1.0, color_mask, 0.4, 0)
+
+    # 保存结果
     result_path = "segmentation_result.png"
-    plt.tight_layout()
-    plt.savefig(result_path, bbox_inches="tight", pad_inches=0)
-    plt.close(fig)
+    overlay_bgr = cv2.cvtColor(overlay, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(result_path, overlay_bgr)
     
     return result_path
 
@@ -104,10 +96,10 @@ def process_image(image):
 # Gradio 界面
 interface = gr.Interface(
     fn=process_image,
-    inputs=gr.components.Image(type="pil"),
+    inputs=gr.Image(type="pil"),
     outputs=[
-        gr.components.Textbox(label="Classification Result"),
-        gr.components.Image(type="filepath", label="Segmentation Result")
+        gr.Textbox(label="Classification Result"),
+        gr.Image(type="filepath", label="Segmentation Result")
     ],
     title="Garbage Classification and Segmentation",
     description="Upload an image of garbage. The system will classify it and visualize the segmented result."
