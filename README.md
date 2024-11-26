@@ -50,11 +50,9 @@ Try the app live here: [Waste Classification Web App](https://huggingface.co/spa
 2. Install the required dependencies:
    ```
    pip install -r requirements.txt
-
 3. Run the application locally:
    ```
    python app.py
-
 4. Open the app in your browser at [Localhost](http://localhost:7860)
 
 ---
